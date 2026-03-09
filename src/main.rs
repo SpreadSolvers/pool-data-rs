@@ -63,28 +63,16 @@ async fn run(args: Args) -> Result<(), clap::Error> {
 
     debug!("Pool data: {:?}", pool_data);
 
-    let token0_metadata =
-        parsers::erc20::fetch_erc20_metadata(pool_data.tokens[0], provider.clone())
+    for (i, token) in pool_data.tokens.iter().enumerate() {
+        let metadata = parsers::erc20::fetch_erc20_metadata(token.clone(), provider.clone())
             .await
             .map_err(|e| {
                 warn!("Failed to parse erc20 metadata: {e}");
                 clap::Error::new(clap::error::ErrorKind::Io)
             })?;
-
-    debug!("Token0 metadata: {:?}", token0_metadata);
-
-    let token1_metadata =
-        parsers::erc20::fetch_erc20_metadata(pool_data.tokens[1], provider.clone())
-            .await
-            .map_err(|e| {
-                warn!("Failed to parse erc20 metadata: {e}");
-                clap::Error::new(clap::error::ErrorKind::Io)
-            })?;
-
-    debug!("Token1 metadata: {:?}", token1_metadata);
-
-    println!("Token0 metadata: {:?}", token0_metadata);
-    println!("Token1 metadata: {:?}", token1_metadata);
+        debug!("Token metadata: {}", metadata);
+        println!("Token{i} metadata: {}", metadata);
+    }
 
     debug!("Time taken: {:?}", time.elapsed());
 

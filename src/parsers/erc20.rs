@@ -1,13 +1,13 @@
 use std::fmt::Display;
 
-use alloy::{primitives::Address, providers::Provider, rpc::types::TransactionRequest};
+use alloy::{primitives::Address, providers::Provider};
 
 use crate::{
     abi::erc20::IERC20::{self, decimalsCall, nameCall, symbolCall},
     provider::MyProvider,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ERC20Metadata {
     name: String,
     symbol: String,
@@ -18,7 +18,7 @@ impl Display for ERC20Metadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ERC20Metadata {{ name: {}, symbol: {}, decimals: {} }}",
+            "{{ name: {}, symbol: {}, decimals: {} }}",
             self.name, self.symbol, self.decimals
         )
     }

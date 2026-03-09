@@ -1,7 +1,8 @@
+use std::fmt::Display;
+
 use crate::{
-    abi::uniswap_v2::{
-        factory::UniswapV2Factory,
-        pool::UniswapV2Pool::{self, factoryCall, getReservesCall, token0Call, token1Call},
+    abi::uniswap_v2::pool::UniswapV2Pool::{
+        self, factoryCall, getReservesCall, token0Call, token1Call,
     },
     provider::MyProvider,
     types::{PoolData, Protocol},
@@ -21,6 +22,16 @@ pub struct UniswapV2PoolData {
     pub creator_contract: Option<Address>,
     pub tokens: Vec<Address>,
     pub fee: u64,
+}
+
+impl Display for UniswapV2PoolData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ pool_address: {}, protocol: {:?}, creator_contract: {:?}, tokens: {:?}, fee: {} }}",
+            self.pool_address, self.protocol, self.creator_contract, self.tokens, self.fee
+        )
+    }
 }
 
 impl PoolData for UniswapV2PoolData {

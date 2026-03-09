@@ -1,14 +1,13 @@
 use std::str::FromStr;
 use std::time::Instant;
 
-use alloy::providers::Provider;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::{Parser, ValueHint};
 use log::{debug, warn};
 
 use pool_data_rs::parsers::{self, uniswap_v2};
 use pool_data_rs::provider::create_provider;
-use pool_data_rs::types::{PoolData, Protocol};
+use pool_data_rs::types::Protocol;
 
 #[derive(Debug, Parser)]
 #[command(name = "pool")]
@@ -40,7 +39,7 @@ async fn run(args: Args) -> Result<(), clap::Error> {
 
     debug!("RPC URL: {rpc_url:?}");
 
-    println!(
+    debug!(
         "Getting pool data for pool_id: {} and rpc_url: {}",
         args.pool_id, args.rpc_url
     );
@@ -63,6 +62,8 @@ async fn run(args: Args) -> Result<(), clap::Error> {
 
     debug!("Pool data: {:?}", pool_data);
 
+    println!("Pool data: {}\n", pool_data);
+
     for (i, token) in pool_data.tokens.iter().enumerate() {
         let metadata = parsers::erc20::fetch_erc20_metadata(token.clone(), provider.clone())
             .await
@@ -71,7 +72,7 @@ async fn run(args: Args) -> Result<(), clap::Error> {
                 clap::Error::new(clap::error::ErrorKind::Io)
             })?;
         debug!("Token metadata: {}", metadata);
-        println!("Token{i} metadata: {}", metadata);
+        println!("Token{i} metadata: {}\n", metadata);
     }
 
     debug!("Time taken: {:?}", time.elapsed());

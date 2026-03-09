@@ -1,4 +1,4 @@
-use alloy::{primitives::Address, transports::http::reqwest::Url};
+use alloy::primitives::Address;
 use clap::ValueEnum;
 
 #[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
@@ -17,12 +17,4 @@ pub trait PoolData: Sized + 'static {
     fn creator_contract(&self) -> Option<&Address>;
     fn tokens(&self) -> Vec<&Address>;
     fn fee(&self) -> u64;
-}
-
-trait PoolParser {
-    fn parse(
-        &self,
-        pool_id: String,
-        rpc_url: Url,
-    ) -> Result<impl PoolData, Box<dyn std::error::Error>>;
 }

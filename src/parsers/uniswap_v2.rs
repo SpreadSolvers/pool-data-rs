@@ -7,12 +7,7 @@ use crate::{
     provider::MyProvider,
     types::{PoolData, Protocol},
 };
-use alloy::{
-    primitives::{Address, Uint},
-    providers::Provider,
-    rpc,
-    transports::http::reqwest::Url,
-};
+use alloy::{primitives::Address, providers::Provider};
 use log::debug;
 
 #[derive(Debug, Clone)]
@@ -28,7 +23,7 @@ impl Display for UniswapV2PoolData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{ pool_address: {}, protocol: {:?}, creator_contract: {:?}, tokens: {:?}, fee: {} }}",
+            "{{\n  pool_address: {},\n  protocol: {:?},\n  creator_contract: {:?},\n  tokens: {:?},\n  fee: {}\n}}",
             self.pool_address, self.protocol, self.creator_contract, self.tokens, self.fee
         )
     }

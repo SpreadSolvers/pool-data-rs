@@ -2595,6 +2595,7 @@ dependencies = [
  "clap",
  "dotenv",
  "env_logger",
+ "hex",
  "log",
  "serde",
  "serde_json",

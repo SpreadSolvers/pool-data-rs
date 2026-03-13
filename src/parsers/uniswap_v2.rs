@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use crate::{
     abi::uniswap_v2::pool::UniswapV2Pool::{
         self, factoryCall, getReservesCall, token0Call, token1Call,

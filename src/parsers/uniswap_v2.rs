@@ -5,50 +5,27 @@ use crate::{
         self, factoryCall, getReservesCall, token0Call, token1Call,
     },
     provider::MyProvider,
-    types::{PoolData, Protocol},
+    types::Protocol,
 };
 use alloy::{primitives::Address, providers::Provider};
 use log::debug;
+use serde::Serialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct UniswapV2PoolData {
     pub pool_address: Address,
     pub protocol: Protocol,
     pub creator_contract: Option<Address>,
     pub tokens: Vec<Address>,
     pub fee: u64,
+    pub reserves: UniswapV2Reserves,
 }
 
-impl Display for UniswapV2PoolData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{\n  pool_address: {},\n  protocol: {:?},\n  creator_contract: {:?},\n  tokens: {:?},\n  fee: {}\n}}",
-            self.pool_address, self.protocol, self.creator_contract, self.tokens, self.fee
-        )
-    }
-}
-
-impl PoolData for UniswapV2PoolData {
-    fn pool_id(&self) -> String {
-        self.pool_address.to_string()
-    }
-
-    fn protocol(&self) -> Protocol {
-        self.protocol.clone()
-    }
-
-    fn creator_contract(&self) -> Option<&Address> {
-        self.creator_contract.as_ref()
-    }
-
-    fn tokens(&self) -> Vec<&Address> {
-        self.tokens.iter().collect()
-    }
-
-    fn fee(&self) -> u64 {
-        self.fee
-    }
+#[derive(Debug, Clone, Serialize)]
+pub struct UniswapV2Reserves {
+    pub reserve0: u128,
+    pub reserve1: u128,
+    pub block_timestamp_last: u32,
 }
 
 pub async fn fetch_pool_data(
@@ -102,6 +79,11 @@ pub async fn fetch_pool_data(
         creator_contract: Some(factory),
         tokens: vec![token0, token1],
         fee: 30,
+        reserves: UniswapV2Reserves {
+            reserve0: reserve0.to::<u128>(),
+            reserve1: reserve1.to::<u128>(),
+            block_timestamp_last,
+        },
     };
 
     Ok(pool_data)

@@ -1,7 +1,7 @@
-use alloy::primitives::Address;
 use clap::ValueEnum;
+use serde::Serialize;
 
-#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq, Serialize)]
 pub enum Protocol {
     #[value(name = "uni-v2")]
     UniswapV2,
@@ -9,12 +9,6 @@ pub enum Protocol {
     UniswapV3,
     #[value(name = "uni-v4")]
     UniswapV4,
-}
-
-pub trait PoolData: Sized + 'static {
-    fn pool_id(&self) -> String;
-    fn protocol(&self) -> Protocol;
-    fn creator_contract(&self) -> Option<&Address>;
-    fn tokens(&self) -> Vec<&Address>;
-    fn fee(&self) -> u64;
+    #[value(name = "algebra-integral")]
+    AlgebraIntegral,
 }

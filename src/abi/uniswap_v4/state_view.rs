@@ -1,87 +1,34 @@
 use alloy::sol;
 
 sol! {
-    #[sol(rpc)]
-    interface IPositionManagerPoolKeys {
-        function poolKeys(bytes25 poolId)
-            external
-            view
-            returns (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks);
+    struct PoolState {
+        uint160 sqrtPriceX96;
+        int24 tick;
+        uint24 protocolFee;
+        uint24 lpFee;
+        uint128 liquidity;
+        uint256 feeGrowthGlobal0X128;
+        uint256 feeGrowthGlobal1X128;
     }
 
-    #[sol(rpc)]
-    interface IStateView {
-        function getFeeGrowthGlobals(bytes32 poolId)
-            external
-            view
-            returns (uint256 feeGrowthGlobal0, uint256 feeGrowthGlobal1);
+    /// @notice Ephemeral lens that fetches basic V4 pool state without deployment
+    /// @author Aperture Finance
+    /// @dev Implements StateView logic via StateLibrary + extsload. Return data via revert.
+    #[sol(rpc, bytecode="608080604052604081610370803803809161001a8285610326565b8339810103126102895780516001600160a01b03811691908290036102895760200151604051919060e083016001600160401b0381118482101761028d576040525f835260208301915f8352604084015f8152606085015f815260808601915f835260a08701935f855260c08801955f875261009581610349565b60405190631e2eaeaf60e01b82526004820152602081602481865afa9081156102a1575f916102f4575b5062ffffff8160d01c16855262ffffff8160b81c1684528060a01c60020b895260018060a01b031689526100f281610349565b90600382018092116102ac5760405191631e2eaeaf60e01b83526004830152602082602481865afa80156102a1575f906102c0575b6001600160801b0316865261013c9150610349565b600181018091116102ac575f90604460405180948193631afeb18d60e11b83526004830152600260248301525afa9081156102a1575f916101ec575b5060208082015160409283015188528652815198516001600160a01b0316908901908152965160020b908801525162ffffff90811660608801529051166080860152516001600160801b031660a08501525160c08401525160e0808401919091528252906101e861010082610326565b5190fd5b90503d805f833e6101fd8183610326565b810190602081830312610289578051906001600160401b03821161028957019080601f83011215610289578151916001600160401b03831161028d578260051b906040519361024f6020840186610326565b845260208085019282010192831161028957602001905b8282106102795750505062ffffff610178565b8151815260209182019101610266565b5f80fd5b634e487b7160e01b5f52604160045260245ffd5b6040513d5f823e3d90fd5b634e487b7160e01b5f52601160045260245ffd5b506020823d6020116102ec575b816102da60209383610326565b810103126102895761013c9151610127565b3d91506102cd565b90506020813d60201161031e575b8161030f60209383610326565b8101031261028957515f6100bf565b3d9150610302565b601f909101601f19168101906001600160401b0382119082101761028d57604052565b604051602081019182526006604082015260408152610369606082610326565b5190209056fe")]
+    contract PoolStateView {
+        /// @param poolManager PoolManager address (e.g. 0x000000000004444c5dc75cB358380D2e3dE08A90 on Ethereum)
+        /// @param poolId Pool ID (bytes32)
+        constructor(address poolManager, bytes32 poolId) payable {
+            PoolState memory state = getPoolState(poolManager, poolId);
+            bytes memory returnData = abi.encode(state);
+            assembly ("memory-safe") {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
 
-        function getFeeGrowthInside(bytes32 poolId, int24 tickLower, int24 tickUpper)
-            external
-            view
-            returns (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128);
-
-        function getLiquidity(bytes32 poolId) external view returns (uint128 liquidity);
-
-        function getPositionInfo(bytes32 poolId, bytes32 positionId)
-            external
-            view
-            returns (
-                uint128 liquidity,
-                uint256 feeGrowthInside0LastX128,
-                uint256 feeGrowthInside1LastX128
-            );
-
-        function getPositionInfo(
-            bytes32 poolId,
-            address owner,
-            int24 tickLower,
-            int24 tickUpper,
-            bytes32 salt
-        )
-            external
-            view
-            returns (
-                uint128 liquidity,
-                uint256 feeGrowthInside0LastX128,
-                uint256 feeGrowthInside1LastX128
-            );
-
-        function getPositionLiquidity(bytes32 poolId, bytes32 positionId)
-            external
-            view
-            returns (uint128 liquidity);
-
-        function getSlot0(bytes32 poolId)
-            external
-            view
-            returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee);
-
-        function getTickBitmap(bytes32 poolId, int16 tick)
-            external
-            view
-            returns (uint256 tickBitmap);
-
-        function getTickFeeGrowthOutside(bytes32 poolId, int24 tick)
-            external
-            view
-            returns (uint256 feeGrowthOutside0X128, uint256 feeGrowthOutside1X128);
-
-        function getTickInfo(bytes32 poolId, int24 tick)
-            external
-            view
-            returns (
-                uint128 liquidityGross,
-                int128 liquidityNet,
-                uint256 feeGrowthOutside0X128,
-                uint256 feeGrowthOutside1X128
-            );
-
-        function getTickLiquidity(bytes32 poolId, int24 tick)
-            external
-            view
-            returns (uint128 liquidityGross, int128 liquidityNet);
-
-        function poolManager() external view returns (address);
+        /// @notice Get basic pool state: slot0, liquidity, fee growth globals
+        function getPoolState(address poolManager, bytes32 poolId) public view returns (PoolState memory state) {
+            revert("stub");
+        }
     }
 }

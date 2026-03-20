@@ -19,6 +19,13 @@ struct Args {
     protocol: Protocol,
     #[arg(value_hint = ValueHint::Url)]
     rpc_url: String,
+
+    #[arg(value_hint = ValueHint::Other, long, short)]
+    position_manager: Option<Address>,
+
+    // If true, will fetch ticks data
+    #[arg(long, short, default_value = "false")]
+    ticks: bool,
 }
 
 async fn run(args: Args) -> Result<(), clap::Error> {
@@ -29,9 +36,8 @@ async fn run(args: Args) -> Result<(), clap::Error> {
     let pool_id = if args.protocol == Protocol::UniswapV4 {
         Address::ZERO // Not used for V4
     } else {
-        Address::from_str(&args.pool_id).map_err(|_| {
-            clap::Error::new(clap::error::ErrorKind::InvalidValue)
-        })?
+        Address::from_str(&args.pool_id)
+            .map_err(|_| clap::Error::new(clap::error::ErrorKind::InvalidValue))?
     };
 
     debug!("Pool ID: {}", args.pool_id);
@@ -88,7 +94,7 @@ async fn run(args: Args) -> Result<(), clap::Error> {
             );
         }
         Protocol::UniswapV3 => {
-            let pool_data = uniswap_v3::fetch_pool_data(pool_id, provider.clone())
+            let pool_data = uniswap_v3::fetch_pool_data(pool_id, provider.clone(), args.ticks)
                 .await
                 .map_err(|e| {
                     warn!("Failed to parse pool data: {e}");
@@ -105,17 +111,33 @@ async fn run(args: Args) -> Result<(), clap::Error> {
                 let mut err = clap::Error::new(clap::error::ErrorKind::InvalidValue);
                 err.insert(
                     ContextKind::InvalidValue,
-                    ContextValue::String("Pool ID must be 32-byte hex (0x + 64 chars) for Uniswap V4".to_string()),
+                    ContextValue::String(
+                        "Pool ID must be 32-byte hex (0x + 64 chars) for Uniswap V4".to_string(),
+                    ),
                 );
                 err
             })?;
 
-            let pool_data = uniswap_v4::fetch_pool_data(pool_id_b256, provider.clone())
-                .await
-                .map_err(|e| {
-                    warn!("Failed to parse pool data: {e}");
-                    clap::Error::new(clap::error::ErrorKind::Io)
-                })?;
+            let Some(position_manager) = args.position_manager else {
+                let mut err = clap::Error::new(clap::error::ErrorKind::InvalidValue);
+                err.insert(
+                    ContextKind::InvalidValue,
+                    ContextValue::String("Position manager address is required".to_string()),
+                );
+                return Err(err);
+            };
+
+            let pool_data = uniswap_v4::fetch_pool_data(
+                pool_id_b256,
+                position_manager,
+                provider.clone(),
+                args.ticks,
+            )
+            .await
+            .map_err(|e| {
+                warn!("Failed to parse pool data: {e}");
+                clap::Error::new(clap::error::ErrorKind::Io)
+            })?;
 
             println!(
                 "{}",

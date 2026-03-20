@@ -17,7 +17,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UniswapV3PoolData {
-    pub ticks: Vec<ProcessedTick>,
+    pub ticks: Option<Vec<ProcessedTick>>,
     pub pool_address: Address,
     pub protocol: Protocol,
     pub creator_contract: Option<Address>,
@@ -59,42 +59,12 @@ fn revert_data_from_error(e: &ContractError) -> Option<Bytes> {
 pub async fn fetch_pool_data(
     pool_id: Address,
     provider: MyProvider,
+    is_fetching_ticks: bool,
 ) -> Result<UniswapV3PoolData, Box<dyn std::error::Error>> {
-    let result: Result<Bytes, ContractError> =
-        EphemeralPoolTicksGetter::deploy_builder(provider.clone(), pool_id)
-            .call()
-            .await;
-
-    let ticks = match &result {
-        Ok(_) => {
-            debug!("Ephemeral contract returned success (unexpected)");
-            vec![]
-        }
-        Err(e) => {
-            let decoded = e.as_decoded_error::<Ticks>();
-            let ticks_vec = match decoded {
-                Some(t) => {
-                    debug!("Decoded Ticks from revert (as_decoded_error)");
-
-                    t.ticks.clone()
-                }
-                None => revert_data_from_error(e)
-                    .and_then(|bytes| Ticks::abi_decode(bytes.as_ref()).ok())
-                    .map(|t| t.ticks)
-                    .unwrap_or_else(|| {
-                        debug!("Could not decode ticks from revert: {:?}", e);
-                        vec![]
-                    }),
-            };
-            ticks_vec
-                .into_iter()
-                .map(|t| ProcessedTick {
-                    index: t.index.try_into().expect("Failed to convert index to i32"),
-                    liquidity_gross: t.liquidityGross,
-                    liquidity_net: t.liquidityNet,
-                })
-                .collect()
-        }
+    let ticks = if is_fetching_ticks {
+        Some(fetch_ticks(pool_id, provider.clone()).await?)
+    } else {
+        None
     };
 
     debug!("Ticks: {:?}", ticks);
@@ -145,4 +115,48 @@ pub async fn fetch_pool_data(
     };
 
     Ok(pool_data)
+}
+
+async fn fetch_ticks(
+    pool_id: Address,
+    provider: MyProvider,
+) -> Result<Vec<ProcessedTick>, Box<dyn std::error::Error>> {
+    let result: Result<Bytes, ContractError> =
+        EphemeralPoolTicksGetter::deploy_builder(provider.clone(), pool_id)
+            .call()
+            .await;
+
+    let ticks = match &result {
+        Ok(_) => {
+            debug!("Ephemeral contract returned success (unexpected)");
+            vec![]
+        }
+        Err(e) => {
+            let decoded = e.as_decoded_error::<Ticks>();
+            let ticks_vec = match decoded {
+                Some(t) => {
+                    debug!("Decoded Ticks from revert (as_decoded_error)");
+
+                    t.ticks.clone()
+                }
+                None => revert_data_from_error(e)
+                    .and_then(|bytes| Ticks::abi_decode(bytes.as_ref()).ok())
+                    .map(|t| t.ticks)
+                    .unwrap_or_else(|| {
+                        debug!("Could not decode ticks from revert: {:?}", e);
+                        vec![]
+                    }),
+            };
+            ticks_vec
+                .into_iter()
+                .map(|t| ProcessedTick {
+                    index: t.index.try_into().expect("Failed to convert index to i32"),
+                    liquidity_gross: t.liquidityGross,
+                    liquidity_net: t.liquidityNet,
+                })
+                .collect()
+        }
+    };
+
+    Ok(ticks)
 }

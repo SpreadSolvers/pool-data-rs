@@ -1,23 +1,24 @@
 use crate::{
-    abi::uniswap_v4::state_view::{IPositionManagerPoolKeys, IStateView},
+    abi::uniswap_v4::{
+        state_view::{PoolState, PoolStateView},
+        ticks_getter::{EphemeralPoolTicksV4, IPositionManager, Tick},
+    },
     provider::MyProvider,
     types::Protocol,
 };
 use alloy::{
-    primitives::{Address, B256, address},
-    providers::Provider,
+    contract::Error as ContractError,
+    primitives::{Address, B256, Bytes, address},
+    sol_types::{SolType, sol_data::Array},
 };
 use log::debug;
 use serde::Serialize;
 
-const STATE_VIEW: Address = address!("7fFE42C4a5DEeA5b0feC41C94C136Cf115597227");
 const POSITION_MANAGER: Address = address!("bD216513d74C8cf14cf4747E6AaA6420FF64ee9e");
-const MIN_TICK: i32 = -887272;
-const MAX_TICK: i32 = 887272;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UniswapV4PoolData {
-    pub ticks: Vec<ProcessedTick>,
+    pub ticks: Option<Vec<ProcessedTick>>,
     pub pool_id: B256,
     pub protocol: Protocol,
     pub creator_contract: Option<Address>,
@@ -27,7 +28,6 @@ pub struct UniswapV4PoolData {
     pub liquidity: u128,
     pub tick: i64,
     pub tick_spacing: i64,
-    pub max_liquidity_per_tick: u128,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -37,106 +37,131 @@ pub struct ProcessedTick {
     pub liquidity_net: i128,
 }
 
-fn compress_tick(tick: i32, tick_spacing: i32) -> i32 {
-    let mut compressed = tick / tick_spacing;
-    if tick < 0 && tick % tick_spacing != 0 {
-        compressed -= 1;
+fn revert_data_from_error(e: &ContractError) -> Option<Bytes> {
+    if let Some(data) = e.as_revert_data() {
+        return Some(data);
     }
-    compressed
-}
-
-fn get_word_positions(tick_spacing: i32) -> (i16, i16) {
-    let compressed_lower = compress_tick(MIN_TICK, tick_spacing);
-    let compressed_upper = compress_tick(MAX_TICK, tick_spacing);
-    (
-        (compressed_lower >> 8) as i16,
-        (compressed_upper >> 8) as i16,
-    )
+    let ContractError::TransportError(te) = e else {
+        return None;
+    };
+    let payload = te.as_error_resp()?;
+    let raw = payload.data.as_ref()?;
+    let s = raw.get().trim_matches('"').trim();
+    let hex_str = s
+        .strip_prefix("Reverted 0x")
+        .or_else(|| s.strip_prefix("0x"))?;
+    hex::decode(hex_str).ok().map(Bytes::from)
 }
 
 pub async fn fetch_pool_data(
     pool_id: B256,
+    position_manager: Address,
     provider: MyProvider,
+    is_fetching_ticks: bool,
 ) -> Result<UniswapV4PoolData, Box<dyn std::error::Error>> {
-    let state_view = IStateView::new(STATE_VIEW, provider.clone());
-    let position_manager = IPositionManagerPoolKeys::new(POSITION_MANAGER, provider.clone());
+    debug!("Position manager: {position_manager}");
 
-    // bytes25 = first 25 bytes of pool_id
+    let position_manager_instance = IPositionManager::new(position_manager, provider.clone());
+
+    let pool_manager: Address = position_manager_instance
+        .poolManager()
+        .call()
+        .await
+        .map_err(|e| format!("Failed to get pool manager from position manager: {e}"))?;
+
+    let result: Result<Bytes, ContractError> =
+        PoolStateView::deploy_builder(provider.clone(), pool_manager, pool_id)
+            .call()
+            .await;
+
+    let pool_state = match &result {
+        Ok(_) => return Err("Ephemeral StateView returned success (unexpected)".into()),
+        Err(e) => {
+            let bytes = revert_data_from_error(e)
+                .ok_or_else(|| format!("Could not extract revert data: {e}"))?;
+            PoolState::abi_decode(bytes.as_ref())
+                .map_err(|e| format!("Failed to decode PoolState: {e}"))?
+        }
+    };
+
+    let ticks = if is_fetching_ticks {
+        Some(fetch_ticks(pool_id, position_manager, provider.clone()).await?)
+    } else {
+        None
+    };
+
     let pool_id_prefix: [u8; 25] = pool_id[..25].try_into().expect("pool_id len");
     let pool_id_prefix = alloy::primitives::FixedBytes::from(pool_id_prefix);
 
-    let pool_keys = position_manager
+    let pool_keys = position_manager_instance
         .poolKeys(pool_id_prefix)
         .call()
         .await
         .map_err(|e| format!("poolKeys failed: {e}"))?;
 
-    let currency0 = pool_keys.currency0;
-    let currency1 = pool_keys.currency1;
-    let fee = pool_keys.fee;
-    let tick_spacing = pool_keys.tickSpacing;
-
-    let tick_spacing_i32: i32 = tick_spacing.try_into().expect("tickSpacing to i32");
-    let tick_spacing_abs = tick_spacing_i32.abs() as i64;
-
-    let multicall = provider
-        .multicall()
-        .add(state_view.getSlot0(pool_id))
-        .add(state_view.getLiquidity(pool_id));
-
-    let (slot0, liquidity) = multicall
-        .aggregate()
-        .await
-        .map_err(|e| format!("StateView multicall failed: {e}"))?;
-
-    let (word_pos_lower, word_pos_upper) = get_word_positions(tick_spacing_i32);
-
-    let mut ticks = Vec::new();
-    for word in word_pos_lower..=word_pos_upper {
-        let bitmap = state_view
-            .getTickBitmap(pool_id, word)
-            .call()
-            .await
-            .unwrap_or_default();
-
-        let bitmap_u128: u128 = bitmap.to::<u128>();
-        for bit in 0..256u32 {
-            if bitmap_u128 & (1u128 << bit) == 0 {
-                continue;
-            }
-            let tick = ((word as i32) << 8 | bit as i32) * tick_spacing_i32;
-            let tick_i24: alloy::primitives::Signed<24, 1> =
-                tick.try_into().expect("tick to int24");
-            let tick_result = state_view.getTickLiquidity(pool_id, tick_i24).call().await;
-
-            let (liquidity_gross, liquidity_net) = match tick_result {
-                Ok(r) => (r.liquidityGross, r.liquidityNet),
-                Err(_) => (0u128, 0i128),
-            };
-
-            ticks.push(ProcessedTick {
-                index: tick,
-                liquidity_gross,
-                liquidity_net,
-            });
-        }
-    }
-
-    debug!("Ticks: {:?}", ticks);
+    let tick_spacing_abs = pool_keys
+        .tickSpacing
+        .try_into()
+        .map(|s: i32| s.abs() as i64)
+        .expect("tickSpacing to i64");
 
     let pool_data = UniswapV4PoolData {
         pool_id,
         protocol: Protocol::UniswapV4,
         creator_contract: Some(POSITION_MANAGER),
-        tokens: vec![currency0, currency1],
-        fee: fee.try_into().expect("fee to u64"),
-        sqrt_price_x96: slot0.sqrtPriceX96.try_into().expect("sqrtPriceX96 to u128"),
-        liquidity,
-        tick: slot0.tick.try_into().expect("tick to i64"),
+        tokens: vec![pool_keys.currency0, pool_keys.currency1],
+        fee: pool_keys.fee.try_into().expect("fee to u64"),
+        sqrt_price_x96: pool_state
+            .sqrtPriceX96
+            .try_into()
+            .expect("sqrtPriceX96 to u128"),
+        liquidity: pool_state.liquidity,
+        tick: pool_state.tick.try_into().expect("tick to i64"),
         tick_spacing: tick_spacing_abs,
-        max_liquidity_per_tick: 0, // V4 doesn't expose this per-pool
         ticks,
     };
 
     Ok(pool_data)
+}
+
+async fn fetch_ticks(
+    pool_id: B256,
+    position_manager: Address,
+    provider: MyProvider,
+) -> Result<Vec<ProcessedTick>, Box<dyn std::error::Error>> {
+    let ticks_result: Result<Bytes, ContractError> =
+        EphemeralPoolTicksV4::deploy_builder(provider.clone(), position_manager, pool_id)
+            .call()
+            .await;
+
+    debug!("Ticks result: {:?}", ticks_result);
+
+    let ticks = match &ticks_result {
+        Ok(_) => return Err("EphemeralPoolTicksV4 returned success (unexpected)".into()),
+        Err(e) => {
+            let bytes = revert_data_from_error(e)
+                .ok_or_else(|| format!("Could not extract ticks revert data: {e}"))?;
+
+            let ticks_vec = Array::<Tick>::abi_decode(bytes.as_ref())
+                .map_err(|e| format!("Failed to decode ticks: {e}"))?;
+
+            ticks_vec
+                .into_iter()
+                .map(|t| {
+                    let index = t
+                        .index
+                        .try_into()
+                        .map_err(|_| "tick index out of i32 range".to_string())?;
+                    Ok::<_, String>(ProcessedTick {
+                        index,
+                        liquidity_gross: t.liquidityGross,
+                        liquidity_net: t.liquidityNet,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()
+                .map_err(|e| Box::<dyn std::error::Error>::from(e))?
+        }
+    };
+
+    Ok(ticks)
 }

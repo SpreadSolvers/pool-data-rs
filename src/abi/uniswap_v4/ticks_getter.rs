@@ -8,14 +8,18 @@ sol! {
     }
 
     /// @notice Minimal interface for PositionManager.poolKeys
-    interface IPositionManagerPoolKeys {
+    #[sol(rpc)]
+    interface IPositionManager {
         function poolKeys(bytes25 poolId)
             external
             view
             returns (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks);
+
+        function poolManager() external view returns (address);
     }
 
     /// @notice Minimal interface for StateView tick queries (PoolId = bytes32)
+    #[sol(rpc)]
     interface IStateViewTicks {
         function getTickBitmap(bytes32 poolId, int16 tick) external view returns (uint256 tickBitmap);
         function getTickLiquidity(bytes32 poolId, int24 tick)
@@ -35,7 +39,7 @@ sol! {
         /// @param positionManager PositionManager address (e.g. 0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e on Ethereum)
         /// @param stateView StateView helper address (e.g. 0x7fFE42C4a5DEeA5b0feC41C94C136Cf115597227 on Ethereum)
         /// @param poolId Pool ID (bytes32). Use bytes25(poolId) to get poolKey from PositionManager.poolKeys
-        constructor(address positionManager, address stateView, bytes32 poolId) payable {
+        constructor(address positionManager, bytes32 poolId) payable {
             Tick[] memory ticks = getAllTicks(positionManager, stateView, poolId);
             bytes memory returnData = abi.encode(ticks);
             assembly ("memory-safe") {

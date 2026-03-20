@@ -1,6 +1,6 @@
 use crate::{
     abi::{
-        ephemeral_pool_ticks_getter::EphemeralPoolTicksGetter::{self, Tick, Ticks},
+        ephemeral_pool_ticks_getter::EphemeralPoolTicksGetter::{self, Ticks},
         uniswap_v3::pool::UniswapV3Pool::{self},
     },
     provider::MyProvider,
@@ -17,6 +17,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UniswapV3PoolData {
+    pub ticks: Vec<ProcessedTick>,
     pub pool_address: Address,
     pub protocol: Protocol,
     pub creator_contract: Option<Address>,
@@ -27,7 +28,13 @@ pub struct UniswapV3PoolData {
     pub tick: i64,
     pub tick_spacing: i64,
     pub max_liquidity_per_tick: u128,
-    pub ticks: Vec<Tick>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcessedTick {
+    pub index: i32,
+    pub liquidity_gross: u128,
+    pub liquidity_net: i128,
 }
 
 /// Extracts revert data from contract error. Alloy's `as_revert_data()` only returns data when
@@ -80,6 +87,13 @@ pub async fn fetch_pool_data(
                     }),
             };
             ticks_vec
+                .into_iter()
+                .map(|t| ProcessedTick {
+                    index: t.index.try_into().expect("Failed to convert index to i32"),
+                    liquidity_gross: t.liquidityGross,
+                    liquidity_net: t.liquidityNet,
+                })
+                .collect()
         }
     };
 

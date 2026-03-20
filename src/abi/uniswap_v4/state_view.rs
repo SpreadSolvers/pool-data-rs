@@ -2,6 +2,14 @@ use alloy::sol;
 
 sol! {
     #[sol(rpc)]
+    interface IPositionManagerPoolKeys {
+        function poolKeys(bytes25 poolId)
+            external
+            view
+            returns (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks);
+    }
+
+    #[sol(rpc)]
     interface IStateView {
         function getFeeGrowthGlobals(bytes32 poolId)
             external

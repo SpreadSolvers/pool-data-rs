@@ -1,7 +1,6 @@
-sol! {
-    import {TickBitmap} from "@uniswap/v4-core/src/libraries/TickBitmap.sol";
-    import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+use alloy::sol;
 
+sol! {
     struct Tick {
         int24 index;
         uint128 liquidityGross;
@@ -16,10 +15,10 @@ sol! {
             returns (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks);
     }
 
-    /// @notice Minimal interface for StateView tick queries
+    /// @notice Minimal interface for StateView tick queries (PoolId = bytes32)
     interface IStateViewTicks {
-        function getTickBitmap(PoolId poolId, int16 tick) external view returns (uint256 tickBitmap);
-        function getTickLiquidity(PoolId poolId, int24 tick)
+        function getTickBitmap(bytes32 poolId, int16 tick) external view returns (uint256 tickBitmap);
+        function getTickLiquidity(bytes32 poolId, int24 tick)
             external
             view
             returns (uint128 liquidityGross, int128 liquidityNet);
@@ -61,7 +60,7 @@ sol! {
 
             uint256 numTicks = 0;
             for (int256 word = wordPosLower; word <= wordPosUpper; word++) {
-                uint256 bitmap = IStateViewTicks(stateView).getTickBitmap(PoolId.wrap(poolId), int16(word));
+                uint256 bitmap = IStateViewTicks(stateView).getTickBitmap(poolId, int16(word));
                 if (bitmap == 0) continue;
                 for (uint256 bit; bit < 256; bit++) {
                     if (bitmap & (1 << bit) > 0) numTicks++;
@@ -71,13 +70,13 @@ sol! {
             ticks = new Tick[](numTicks);
             uint256 idx = 0;
             for (int256 word = wordPosLower; word <= wordPosUpper; word++) {
-                uint256 bitmap = IStateViewTicks(stateView).getTickBitmap(PoolId.wrap(poolId), int16(word));
+                uint256 bitmap = IStateViewTicks(stateView).getTickBitmap(poolId, int16(word));
                 if (bitmap == 0) continue;
                 for (uint256 bit; bit < 256; bit++) {
                     if (bitmap & (1 << bit) == 0) continue;
                     int24 tick = int24(int256((word << 8) + int256(bit))) * tickSpacing;
                     (ticks[idx].liquidityGross, ticks[idx].liquidityNet) =
-                        IStateViewTicks(stateView).getTickLiquidity(PoolId.wrap(poolId), tick);
+                        IStateViewTicks(stateView).getTickLiquidity(poolId, tick);
                     ticks[idx].index = tick;
                     idx++;
                 }
@@ -93,10 +92,15 @@ sol! {
         }
 
         function _getWordPositions(int24 tickSpacing) internal pure returns (int16 wordPosLower, int16 wordPosUpper) {
-            int24 compressed = TickBitmap.compress(MIN_TICK, tickSpacing);
+            int24 compressed = _compress(MIN_TICK, tickSpacing);
             wordPosLower = int16(compressed >> 8);
-            compressed = TickBitmap.compress(MAX_TICK, tickSpacing);
+            compressed = _compress(MAX_TICK, tickSpacing);
             wordPosUpper = int16(compressed >> 8);
+        }
+
+        function _compress(int24 tick, int24 tickSpacing) internal pure returns (int24 compressed) {
+            compressed = tick / tickSpacing;
+            if (tick < 0 && tick % tickSpacing != 0) compressed--;
         }
     }
 }

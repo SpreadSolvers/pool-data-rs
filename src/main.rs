@@ -6,7 +6,7 @@ use clap::error::{ContextKind, ContextValue};
 use clap::{Parser, ValueHint};
 use log::{debug, warn};
 
-use pool_data_rs::parsers::{algebra_integral, uniswap_v2, uniswap_v3};
+use pool_data_rs::parsers::{algebra_integral, uniswap_v2, uniswap_v3, uniswap_v4};
 use pool_data_rs::provider::create_provider;
 use pool_data_rs::types::Protocol;
 
@@ -26,11 +26,15 @@ async fn run(args: Args) -> Result<(), clap::Error> {
 
     debug!("Args: {args:?}");
 
-    let Ok(pool_id) = Address::from_str(&args.pool_id) else {
-        return Err(clap::Error::new(clap::error::ErrorKind::InvalidValue));
+    let pool_id = if args.protocol == Protocol::UniswapV4 {
+        Address::ZERO // Not used for V4
+    } else {
+        Address::from_str(&args.pool_id).map_err(|_| {
+            clap::Error::new(clap::error::ErrorKind::InvalidValue)
+        })?
     };
 
-    debug!("Pool ID: {pool_id:?}");
+    debug!("Pool ID: {}", args.pool_id);
 
     let Ok(rpc_url) = Url::parse(&args.rpc_url) else {
         warn!("Invalid RPC URL: {}", args.rpc_url);
@@ -96,6 +100,28 @@ async fn run(args: Args) -> Result<(), clap::Error> {
                 serde_json::to_string_pretty(&pool_data).expect("Failed to serialize pool data")
             );
         }
+        Protocol::UniswapV4 => {
+            let pool_id_b256 = alloy::primitives::B256::from_str(&args.pool_id).map_err(|_| {
+                let mut err = clap::Error::new(clap::error::ErrorKind::InvalidValue);
+                err.insert(
+                    ContextKind::InvalidValue,
+                    ContextValue::String("Pool ID must be 32-byte hex (0x + 64 chars) for Uniswap V4".to_string()),
+                );
+                err
+            })?;
+
+            let pool_data = uniswap_v4::fetch_pool_data(pool_id_b256, provider.clone())
+                .await
+                .map_err(|e| {
+                    warn!("Failed to parse pool data: {e}");
+                    clap::Error::new(clap::error::ErrorKind::Io)
+                })?;
+
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&pool_data).expect("Failed to serialize pool data")
+            );
+        }
         Protocol::AlgebraIntegral => {
             let pool_data = algebra_integral::fetch_pool_data(pool_id, provider.clone())
                 .await
@@ -107,16 +133,6 @@ async fn run(args: Args) -> Result<(), clap::Error> {
                 "{}",
                 serde_json::to_string_pretty(&pool_data).expect("Failed to serialize pool data")
             );
-        }
-        _ => {
-            warn!("Not implemented protocol: {:?}", args.protocol);
-            let mut err = clap::Error::new(clap::error::ErrorKind::InvalidValue);
-            err.insert(
-                ContextKind::InvalidValue,
-                ContextValue::String(format!("Not implemented yet protocol: {:?}", args.protocol)),
-            );
-
-            return Err(err);
         }
     }
 
